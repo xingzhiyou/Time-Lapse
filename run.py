@@ -27,6 +27,13 @@ def check_admin_required(file_path: str):
     return False
 
 if __name__ == "__main__":
+    # 打印免责声明提示
+    print("-" * 40)
+    print("时隙 (Time-Lapse) 自动化工具")
+    print("免责声明: 使用本软件即表示您同意 README.md 中的条款。")
+    print("请仅用于教育与个人研究，勿用于违反第三方协议的行为。")
+    print("-" * 40)
+
     # Determine base path
     if getattr(sys, 'frozen', False):
         base_path = os.path.dirname(sys.executable)
