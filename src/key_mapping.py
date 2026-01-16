@@ -1,12 +1,23 @@
 # Windows Virtual Key Codes for GetAsyncKeyState
 # https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+import json
+import os
 
+# Default mapping (fallback)
 VK_MAPPING = {
     'lbutton': 0x01, 'rbutton': 0x02, 'mbutton': 0x04,
+    # Aliases for mouse buttons
+    'mouse_left': 0x01, 'left_click': 0x01,
+    'mouse_right': 0x02, 'right_click': 0x02,
+    'mouse_middle': 0x04, 'middle_click': 0x04,
+
     'back': 0x08, 'tab': 0x09, 'clear': 0x0C, 'enter': 0x0D,
     'shift': 0x10, 'ctrl': 0x11, 'alt': 0x12, 'pause': 0x13, 'caps_lock': 0x14,
     'esc': 0x1B, 'space': 0x20, 'page_up': 0x21, 'page_down': 0x22,
     'end': 0x23, 'home': 0x24, 'left': 0x25, 'up': 0x26, 'right': 0x27, 'down': 0x28,
+    # Aliases for arrow keys to avoid confusion
+    'arrow_left': 0x25, 'arrow_up': 0x26, 'arrow_right': 0x27, 'arrow_down': 0x28,
+
     'print_screen': 0x2C, 'insert': 0x2D, 'delete': 0x2E,
     '0': 0x30, '1': 0x31, '2': 0x32, '3': 0x33, '4': 0x34,
     '5': 0x35, '6': 0x36, '7': 0x37, '8': 0x38, '9': 0x39,
@@ -24,3 +35,17 @@ VK_MAPPING = {
     'f7': 0x76, 'f8': 0x77, 'f9': 0x78, 'f10': 0x79, 'f11': 0x7A, 'f12': 0x7B,
     'num_lock': 0x90, 'scroll_lock': 0x91,
 }
+
+# Try to load external JSON configuration
+json_path = 'key_mapping.json'
+if os.path.exists(json_path):
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            custom_mapping = json.load(f)
+            # Update/Override the default mapping with custom values
+            # Normalize keys to lowercase for consistency
+            for k, v in custom_mapping.items():
+                VK_MAPPING[k.lower()] = v
+        print(f"[System] Loaded external key mapping from {json_path}")
+    except Exception as e:
+        print(f"[Warning] Failed to load {json_path}: {e}")
