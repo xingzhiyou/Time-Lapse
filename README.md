@@ -90,3 +90,4 @@ Remark: 按住右键触发：松开左键 -> 按下ESC -> 10ms后按下左键并
 - `config.ini`: 用户配置文件。
 - `key_mapping.json`: 用户可编辑的按键映射表。
 - `src/`: 核心代码目录。
+- `requirements.txt`: 项目依赖列表。

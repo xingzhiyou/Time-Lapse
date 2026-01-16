@@ -1,0 +1,9 @@
+pydirectinput
+pynput
+pygetwindow
+pyperclip
+pyscreeze
+pyautogui
+pytweening
+pyrect
+six
