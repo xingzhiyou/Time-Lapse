@@ -5,7 +5,7 @@ import threading
 import ctypes
 import re
 import os
-from key_mapping import VK_MAPPING
+from src.key_mapping import VK_MAPPING
 
 # --- Configuration & Constants ---
 pydirectinput.PAUSE = 0.0  # Set to 0 for minimum latency

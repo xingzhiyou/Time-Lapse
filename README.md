@@ -16,19 +16,25 @@
 
 ## 快速开始
 
-### 1. 安装依赖
+### 手动运行
+
+#### 1. 安装依赖
 
 确保你已经安装了 Python 3.6+ 环境，并安装必要的库：
 
 ```bash
-pip install pydirectinput
+pip install -r requirements.txt
 ```
 
-### 2. 运行程序
+#### 2. 运行程序
 
-使用根目录下的 `run.py` 启动程序，并传入你的配置文件路径：
+使用根目录下的 `run.py` 启动程序：
 
 ```bash
+# 使用默认配置文件
+python run.py
+
+# 或指定配置文件
 python run.py config.ini
 ```
 
@@ -91,3 +97,5 @@ Remark: 按住右键触发：松开左键 -> 按下ESC -> 10ms后按下左键并
 - `key_mapping.json`: 用户可编辑的按键映射表。
 - `src/`: 核心代码目录。
 - `requirements.txt`: 项目依赖列表。
+- `README.md`: 项目说明文档。
+- `LICENSE`: 许可证文件。

@@ -3,6 +3,8 @@
 import json
 import os
 
+import sys
+
 # Default mapping (fallback)
 VK_MAPPING = {
     'lbutton': 0x01, 'rbutton': 0x02, 'mbutton': 0x04,
@@ -36,8 +38,18 @@ VK_MAPPING = {
     'num_lock': 0x90, 'scroll_lock': 0x91,
 }
 
-# Try to load external JSON configuration
-json_path = 'key_mapping.json'
+# Determine the directory where the application is running
+if getattr(sys, 'frozen', False):
+    # If the application is run as a bundle (PyInstaller)
+    base_path = os.path.dirname(sys.executable)
+else:
+    # If the application is run as a script
+    # This file is in src/, so we want the parent directory (project root)
+    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Try to load external JSON configuration from the base path
+json_path = os.path.join(base_path, 'key_mapping.json')
+
 if os.path.exists(json_path):
     try:
         with open(json_path, 'r', encoding='utf-8') as f:
