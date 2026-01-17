@@ -66,6 +66,10 @@ def parse_config(file_path: str):
                 line = line.strip()
                 if not line or line.startswith('#'):
                     continue
+                
+                # Ignore global config keys that are handled separately
+                if line.lower().startswith('requireadmin'):
+                    continue
 
                 # Parse Timeline Header
                 timeline_match = re.match(r'^\[Timeline(?::\s*(.*))?\]$', line, re.IGNORECASE)
