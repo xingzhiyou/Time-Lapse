@@ -13,7 +13,7 @@ pydirectinput.PAUSE = 0.0  # Set to 0 for minimum latency
 class Timeline:
     def __init__(self, name="Unnamed"):
         self.name = name
-        self.trigger_key = None
+        self.trigger_keys = [] # List of trigger keys
         self.target_window = None  # None or "ALL" means all, otherwise partial title match
         self.remark = ""
         self.actions = []  # List of tuples: (timestamp, command, args)
@@ -28,7 +28,7 @@ class Timeline:
         self.is_running = False # Flag to prevent overlapping executions for OneShot/Hold
 
     def __repr__(self):
-        return f"<Timeline '{self.name}' Trigger: {self.trigger_key} Mode: {self.mode}>"
+        return f"<Timeline '{self.name}' Triggers: {self.trigger_keys} Mode: {self.mode}>"
 
 # --- Core Functions ---
 
@@ -87,7 +87,9 @@ def parse_config(file_path: str):
                         value = parts[1].strip()
                         
                         if key == 'trigger':
-                            current_timeline.trigger_key = value.lower()
+                            # Support multiple keys separated by comma
+                            keys = [k.strip().lower() for k in value.split(',') if k.strip()]
+                            current_timeline.trigger_keys.extend(keys)
                             continue
                         elif key == 'remark' or key == 'description':
                             current_timeline.remark = value
@@ -144,7 +146,7 @@ def parse_config(file_path: str):
     
     return timelines
 
-def execute_action_wrapper(command, args):
+def execute_action_wrapper(command, args, all_timelines=None):
     """Wrapper to call pydirectinput functions safely."""
     try:
         if command == 'key_down':
@@ -170,6 +172,26 @@ def execute_action_wrapper(command, args):
                 pydirectinput.move(int(args[0]), int(args[1]))
         elif command == 'wait':
              if args: time.sleep(float(args[0]))
+        elif command == 'run_timeline':
+            if not all_timelines:
+                print("  [Error] run_timeline called but timeline list not available.")
+                return
+            
+            target_name = " ".join(args).strip()
+            target_t = next((t for t in all_timelines if t.name.lower() == target_name.lower()), None)
+            
+            if target_t:
+                if target_t.mode == 'oneshot':
+                    if not target_t.is_running:
+                        print(f"  [Action] Starting async timeline '{target_t.name}'...")
+                        target_t.is_running = True # Mark as running to prevent re-entry
+                        threading.Thread(target=run_timeline_once, args=(target_t, None, all_timelines)).start()
+                    else:
+                        print(f"  [Warn] Skipped async call to '{target_t.name}': already running.")
+                else:
+                    print(f"  [Warn] Cannot call timeline '{target_name}' because it is not OneShot.")
+            else:
+                print(f"  [Warn] Timeline '{target_name}' not found.")
         else:
             print(f"  [Warn] Unknown command: {command}")
     except Exception as e:
@@ -177,11 +199,32 @@ def execute_action_wrapper(command, args):
 
 # --- Execution Logic for Different Modes ---
 
-def run_timeline_once(timeline: Timeline):
+def run_timeline_once(timeline: Timeline, active_trigger_key: str, all_timelines: list = None):
     """Standard OneShot execution."""
-    # timeline.is_running = True <-- Handled in main_loop now
-    print(f"[Action] '{timeline.name}' (OneShot) started.")
+    # Safety Check: Prevent trigger key from being used in actions to avoid recursive loops/conflicts
+    if active_trigger_key:
+        trigger_key_lower = active_trigger_key.lower()
+        for _, command, args in timeline.actions:
+            if args and args[0].lower() == trigger_key_lower:
+                if command in ['key_down', 'press_key', 'key_up']:
+                    print(f"[Error] Timeline '{timeline.name}' conflict: Trigger key '{active_trigger_key}' cannot be used in actions.")
+                    timeline.is_running = False
+                    return
+
+    print(f"[Action] '{timeline.name}' (OneShot) started. Triggered by: {active_trigger_key}")
     
+    def wait_for_release(t: Timeline, trigger_key: str):
+        if trigger_key:
+            # Wait for key to be released (with debounce)
+            while True:
+                if not key_check(trigger_key):
+                    time.sleep(0.05)
+                    if not key_check(trigger_key):
+                        break
+                time.sleep(0.01)
+        t.is_running = False
+        print(f"[Action] '{t.name}' finished and ready for next trigger.")
+
     try:
         start_time = time.perf_counter()
         for timestamp, command, args in timeline.actions:
@@ -194,12 +237,15 @@ def run_timeline_once(timeline: Timeline):
                 if wait_time > 0.002:
                      time.sleep(wait_time - 0.001)
 
-            execute_action_wrapper(command, args)
+            execute_action_wrapper(command, args, all_timelines)
+            
     finally:
-        print(f"[Action] '{timeline.name}' finished.")
-        timeline.is_running = False
-
-def run_timeline_loop(timeline: Timeline, stop_event: threading.Event):
+        # Start release monitor in background so actions can finish independently
+        if active_trigger_key:
+             threading.Thread(target=wait_for_release, args=(timeline, active_trigger_key), daemon=True).start()
+        else:
+             timeline.is_running = False
+def run_timeline_loop(timeline: Timeline, stop_event: threading.Event, all_timelines: list = None):
     """Loop execution until stop_event is set."""
     # timeline.is_running = True <-- Handled in main_loop now
     print(f"[Action] '{timeline.name}' (Loop) started. Interval: {timeline.loop_interval}s")
@@ -219,7 +265,7 @@ def run_timeline_loop(timeline: Timeline, stop_event: threading.Event):
                     if wait_time > 0.002:
                          time.sleep(wait_time - 0.001)
                 
-                execute_action_wrapper(command, args)
+                execute_action_wrapper(command, args, all_timelines)
             
             # Wait for loop interval or stop signal
             if not stop_event.is_set():
@@ -228,13 +274,13 @@ def run_timeline_loop(timeline: Timeline, stop_event: threading.Event):
         print(f"[Action] '{timeline.name}' (Loop) stopped.")
         timeline.is_running = False
 
-def run_timeline_hold(timeline: Timeline):
+def run_timeline_hold(timeline: Timeline, active_trigger_key: str, all_timelines: list = None):
     """
     Executes timeline once, tracks keys pressed down.
     Waits for trigger key release to release tracked keys.
     """
     # timeline.is_running = True <-- Handled in main_loop now
-    print(f"[Action] '{timeline.name}' (Hold) started. Hold trigger to keep state.")
+    print(f"[Action] '{timeline.name}' (Hold) started. Hold trigger '{active_trigger_key}' to keep state.")
     
     try:
         # Track keys that are explicitly pressed down
@@ -268,17 +314,18 @@ def run_timeline_hold(timeline: Timeline):
                 if btn in mouse_buttons_held:
                     mouse_buttons_held.remove(btn)
 
-            execute_action_wrapper(command, args)
+            execute_action_wrapper(command, args, all_timelines)
         
         # Debug info
         if keys_held_down or mouse_buttons_held:
             print(f"  [Hold] Holding keys: {list(keys_held_down)}, Mouse: {list(mouse_buttons_held)}")
         
-        print(f"  -> Script finished. Waiting for trigger '{timeline.trigger_key}' release...")
+        print(f"  -> Script finished. Waiting for trigger '{active_trigger_key}' release...")
         
         # Wait for physical key release
-        while key_check(timeline.trigger_key):
-            time.sleep(0.005) # Increased poll rate for release check
+        if active_trigger_key:
+            while key_check(active_trigger_key):
+                time.sleep(0.005) # Increased poll rate for release check
         
         print("  -> Trigger released. Cleaning up keys.")
         
@@ -304,12 +351,12 @@ def main_loop(file_path: str):
 
     print(f"Loaded {len(timelines)} timelines from {os.path.basename(file_path)}")
     print("-" * 70)
-    print(f"{ 'Name':<20} | {'Trigger':<10} | {'Mode':<8} | {'Target':<10}")
+    print(f"{ 'Name':<20} | {'Triggers':<20} | {'Mode':<8} | {'Target':<10}")
     print("-" * 70)
     for t in timelines:
-        trigger = t.trigger_key if t.trigger_key else "(None)"
+        triggers_str = ",".join(t.trigger_keys) if t.trigger_keys else "(None)"
         target = t.target_window if t.target_window else "ALL"
-        print(f"{t.name:<20} | {trigger:<10} | {t.mode:<8} | {target:<10}")
+        print(f"{t.name:<20} | {triggers_str:<20} | {t.mode:<8} | {target:<10}")
     print("-" * 70)
     print("Running... Press Ctrl+C to exit.")
 
@@ -330,18 +377,22 @@ def main_loop(file_path: str):
             current_window_title = get_active_window_title()
 
             for t in timelines:
-                if t.trigger_key:
-                    # 1. Key Check first (to allow debugging window mismatches)
-                    is_pressed = key_check(t.trigger_key)
+                if t.trigger_keys:
+                    # Check all trigger keys for this timeline
+                    active_trigger_key = None
+                    for key in t.trigger_keys:
+                        if key_check(key):
+                            active_trigger_key = key
+                            break
                     
-                    if is_pressed:
+                    if active_trigger_key:
                         # 2. Window Check
                         if t.target_window and t.target_window.upper() != "ALL":
                             if t.target_window.lower() not in current_window_title.lower():
                                 now = time.time()
                                 last_log = last_triggered.get(t.name + "_log", 0)
                                 if now - last_log > 1.0: # Log max once per second per timeline
-                                    print(f"[Debug] Key '{t.trigger_key}' ignored. Target '{t.target_window}' not found in current window '{current_window_title}'.")
+                                    print(f"[Debug] Key '{active_trigger_key}' ignored. Target '{t.target_window}' not found in current window '{current_window_title}'.")
                                     last_triggered[t.name + "_log"] = now
                                 continue
 
@@ -352,7 +403,7 @@ def main_loop(file_path: str):
                         # Debug log for every press detection (throttled to avoid spamming console completely)
                         # Only print if we are NOT running, to see if we are trying to start
                         if not t.is_running and (time_since_last > COOLDOWN):
-                            print(f"[Debug] Key '{t.trigger_key}' detected. Mode: {t.mode}, Running: {t.is_running}, Cooldown: {time_since_last:.2f}s")
+                            print(f"[Debug] Key '{active_trigger_key}' detected. Mode: {t.mode}, Running: {t.is_running}, Cooldown: {time_since_last:.2f}s")
 
                         if (time_since_last > COOLDOWN):
                             if t.mode == 'loop':
@@ -366,7 +417,7 @@ def main_loop(file_path: str):
                                     if not t.is_running:
                                         t.is_running = True 
                                         t.loop_stop_event = threading.Event()
-                                        t.loop_thread = threading.Thread(target=run_timeline_loop, args=(t, t.loop_stop_event))
+                                        t.loop_thread = threading.Thread(target=run_timeline_loop, args=(t, t.loop_stop_event, timelines))
                                         t.loop_thread.start()
                                         print(f"[System] Loop '{t.name}' toggled ON.")
                                     else:
@@ -377,7 +428,7 @@ def main_loop(file_path: str):
                                     last_triggered[t.name] = now
                                     t.is_running = True 
                                     print(f"[Debug] Starting Hold thread for '{t.name}'")
-                                    threading.Thread(target=run_timeline_hold, args=(t,)).start()
+                                    threading.Thread(target=run_timeline_hold, args=(t, active_trigger_key, timelines)).start()
                                 else:
                                     # This is normal while holding
                                     pass 
@@ -387,7 +438,7 @@ def main_loop(file_path: str):
                                     last_triggered[t.name] = now
                                     t.is_running = True 
                                     print(f"[Debug] Starting OneShot thread for '{t.name}'")
-                                    threading.Thread(target=run_timeline_once, args=(t,)).start()
+                                    threading.Thread(target=run_timeline_once, args=(t, active_trigger_key, timelines)).start()
                                 else:
                                     print(f"[Debug] '{t.name}' oneshot skipped (flag is_running=True).")
                         else:

@@ -6,10 +6,11 @@
 
 - **极低延迟**：优化后的内核支持毫秒级操作，适合“零帧”级的高精度需求。
 - **多触发模式**：
-  - `OneShot`: 触发一次执行一次。
+  - `OneShot`: 触发一次执行一次。支持异步触发，按下即执行，松开才重置。
   - `Loop`: 切换开关，循环执行。
   - `Hold`: 按住触发，松开停止（自动清理按键状态）。
-- **多时间轴并行**：支持同时定义并运行多个独立的操作序列。
+- **多触发键支持**：单个时间轴支持绑定多个触发键（如 `Trigger: e, xbutton2`），任意一个被按下即可触发。
+- **子时间轴调用**：支持在时间轴内部异步调用其他 `OneShot` 时间轴，实现复杂逻辑复用或同时执行。
 - **窗口过滤**：支持指定目标窗口，只有当指定程序处于前台时脚本才会生效。
 - **混合指令**：支持在同一毫秒内执行多个指令（用逗号分隔）。
 - **外置配置**：按键映射表 (`key_mapping.json`) 和脚本配置 (`config.ini`) 均外置，方便维护。
@@ -46,9 +47,9 @@ python run.py config.ini
 ### 时间轴语法
 ```ini
 [Timeline: 你的脚本名称]
-Trigger: rbutton      ; 触发按键 (支持键盘/鼠标，详见 key_mapping.json)
-Target: Arknights     ; 目标窗口标题关键词 (可选，不填则对所有窗口生效)
-Mode: Hold            ; 触发模式: OneShot / Loop / Hold
+Trigger: rbutton, xbutton2  ; 触发按键 (支持多键，用逗号分隔。支持 xbutton1/2 侧键)
+Target: Arknights           ; 目标窗口标题关键词 (可选，不填则对所有窗口生效)
+Mode: Hold                  ; 触发模式: OneShot / Loop / Hold
 Remark: 备注说明
 ```
 
@@ -65,12 +66,19 @@ Remark: 备注说明
 | `mouse_up` | 松开鼠标 | `20 mouse_up right` |
 | `move_mouse` | 移动至绝对坐标 | `0 move_mouse 1920 1080` |
 | `move_mouse_relative` | 相对移动 | `0 move_mouse_relative 0 -10` |
+| `wait` | 强制等待 (秒) | `0 wait 0.5` |
+| `run_timeline` | **异步调用**子时间轴 | `0 run_timeline 零帧部署` |
+
+> **注意**：`run_timeline` 仅支持调用 `OneShot` 模式的时间轴。调用是异步的，主时间轴不会等待子时间轴结束，而是立即执行下一条指令，从而实现“同时执行”。
 
 **高级技巧：单行多指令**
 使用逗号 `,` 分隔，可在同一毫秒内执行多个操作：
 ```ini
 10 mouse_down left, move_mouse_relative 0 -10
 ```
+
+### 安全机制
+为防止逻辑冲突和无限循环，**触发键 (Trigger)** 不能出现在该时间轴的动作指令中。如果配置了相同的键（例如用 `E` 触发 `press_key E`），脚本将拒绝执行并报错。
 
 ### 示例配置
 
@@ -86,10 +94,18 @@ Remark: 按住右键触发：松开左键 -> 按下ESC -> 10ms后按下左键并
 0 key_down esc
 10 mouse_down left, move_mouse_relative 0 -100
 17 key_down esc
+
+[Timeline: 组合技]
+Trigger: f1
+Mode: OneShot
+Remark: 同时执行两个技能脚本
+0 run_timeline 技能A
+0 run_timeline 技能B
 ```
 
 ## 按键映射
-项目根目录下的 `key_mapping.json` 文件包含了所有支持的按键名称（如 `f1`, `ctrl`, `left_click` 等）。你可以直接修改此文件来添加自定义别名。
+项目根目录下的 `key_mapping.json` 文件包含了所有支持的按键名称（如 `f1`, `ctrl`, `left_click` 等）。
+- 新增支持鼠标侧键：`xbutton1` (后退), `xbutton2` (前进)。
 
 ## 项目结构
 - `run.py`: 启动入口。

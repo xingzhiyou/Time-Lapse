@@ -8,6 +8,7 @@ import sys
 # Default mapping (fallback)
 VK_MAPPING = {
     'lbutton': 0x01, 'rbutton': 0x02, 'mbutton': 0x04,
+    'xbutton1': 0x05, 'xbutton2': 0x06,
     # Aliases for mouse buttons
     'mouse_left': 0x01, 'left_click': 0x01,
     'mouse_right': 0x02, 'right_click': 0x02,
